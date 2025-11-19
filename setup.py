@@ -277,9 +277,8 @@ if sys.version_info[:2] < (3, 12):
 
 # define classifiers for the package index
 classifiers = [
-        "Development Status :: 1 - Mature",
+        "Development Status :: 6 - Mature",
         "Intended Audience :: Developers",
-        "License :: DPI Approved :: Python Software Foundation License",
         "Natural Language :: English",
         "Operating System :: OS Independent",
         "Programming Language :: C",
@@ -303,31 +302,31 @@ extension = Extension(
         depends = [],        
         define_macros = defineMacros
         )
+
+with open('ChangeLogs.md', 'r', encoding='utf-8') as file:
+    content = file.read()
+
 if sys.version_info[:2] < (3, 12):
     # perform the setup
     setup(
-            name = "dmPython",
+            name = "dmpython",
             version = BUILD_VERSION,
             distclass = Distribution,
             description = "Python interface to Dameng",        
             cmdclass = commandClasses,        
-            long_description = \
-                "Python interface to Dameng conforming to the Python DB API 2.0 "
-                "specification.\n"
-                "See http://www.python.org/topics/database/DatabaseAPI-2.0.html.",        
+            long_description = content,
+            long_description_content_type="text/markdown",
             ext_modules = [extension],
             keywords = "Dameng",
             license = "Python Software Foundation License",
             classifiers = classifiers)
 else:
     setup(
-            name = "dmPython",
+            name = "dmpython",
             version = BUILD_VERSION,
             description = "Python interface to Dameng",              
-            long_description = \
-                "Python interface to Dameng conforming to the Python DB API 2.0 "
-                "specification.\n"
-                "See http://www.python.org/topics/database/DatabaseAPI-2.0.html.",        
+            long_description = content,
+            long_description_content_type="text/markdown",
             ext_modules = [extension],
             keywords = "Dameng",
             license = "Python Software Foundation License",
