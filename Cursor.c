@@ -168,44 +168,68 @@ Cursor_AllocHandle(
     set default schema
 /************************************************************************/
 sdint2  /* 返回错误码 */
-Cursor_SetSchema(
+Cursor_SetSchema_And_Parsetype(
     dm_Cursor*     self        /* IN:cursor对象 */
 )
 {
     DPIRETURN		rt = DSQL_SUCCESS;
     dhstmt			hstmt = self->handle;
-    dm_Buffer       sch_buf;
+    dm_Buffer       sch_buf, parse_buf;
     sdbyte          sql[300];
     sdbyte          schema_name[NAMELEN * 2 + 1];
 
     //if schema does not set, then return
-    if (self->connection->schema == Py_None)
+    if (self->connection->schema != Py_None)
     {
-        return 0;
+        //get schema from connection obj
+        if (dmBuffer_FromObject(&sch_buf, self->connection->schema, self->environment->encoding) < 0)
+        {
+            PyErr_SetString(PyExc_TypeError, "expecting a None or string schema arguement");
+            return -1;
+        }
+
+        Cursor_escape_quotes(schema_name, NAMELEN * 2 + 1, sch_buf.ptr, sch_buf.size);
+
+        //set schema
+        aq_sprintf(sql, 300, "set schema \"%s\";", (sdbyte*)schema_name);
+
+        Py_BEGIN_ALLOW_THREADS
+            rt = dpi_exec_direct(self->handle, sql);
+        Py_END_ALLOW_THREADS
+
+        dmBuffer_Clear(&sch_buf);
+
+        if (Environment_CheckForError(self->environment, self->handle, DSQL_HANDLE_STMT, rt,
+            "Cursor_InternalPrepare(): prepare") < 0)
+        {
+            return -1;
+        }
     }
 
-    //get schema from connection obj
-    if (dmBuffer_FromObject(&sch_buf, self->connection->schema, self->environment->encoding) < 0)
+    //if parse_type does not set, then return
+    if (self->connection->parse_type != Py_None)
     {
-        PyErr_SetString(PyExc_TypeError, "expecting a None or string schema arguement");
-        return -1;
-    }
+        //get parse_type from connection obj
+        if (dmBuffer_FromObject(&parse_buf, self->connection->parse_type, self->environment->encoding) < 0)
+        {
+            PyErr_SetString(PyExc_TypeError, "expecting a None or string parse_type arguement");
+            return -1;
+        }
 
-    Cursor_escape_quotes(schema_name, NAMELEN * 2 + 1, sch_buf.ptr, sch_buf.size);
+        //set parse_type
+        aq_sprintf(sql, 300, "SP_SET_SESSION_PARSE_TYPE('%s');", (sdbyte*)parse_buf.ptr);
 
-    //set schema
-    aq_sprintf(sql, 300, "set schema \"%s\";", (sdbyte*)schema_name);
+        Py_BEGIN_ALLOW_THREADS
+            rt = dpi_exec_direct(self->handle, sql);
+        Py_END_ALLOW_THREADS
 
-    Py_BEGIN_ALLOW_THREADS
-        rt  = dpi_exec_direct(self->handle, sql);
-    Py_END_ALLOW_THREADS
+        dmBuffer_Clear(&parse_buf);
 
-    dmBuffer_Clear(&sch_buf);
-
-    if (Environment_CheckForError(self->environment, self->handle, DSQL_HANDLE_STMT, rt,
-        "Cursor_InternalPrepare(): prepare") < 0) 
-    {
-        return -1;
+        if (Environment_CheckForError(self->environment, self->handle, DSQL_HANDLE_STMT, rt,
+            "Cursor_InternalPrepare(): prepare") < 0)
+        {
+            return -1;
+        }
     }
 
     return 0;
@@ -240,7 +264,7 @@ Cursor_New(
     }
 
     //设置模式
-    if (Cursor_SetSchema(self))
+    if (Cursor_SetSchema_And_Parsetype(self))
     {
         Cursor_free_inner(self);
         Py_TYPE(self)->tp_free((PyObject*) self);
@@ -3723,7 +3747,7 @@ static PyMemberDef g_CursorMembers[] = {
     { "statement",      T_OBJECT,       offsetof(dm_Cursor, statement),        READONLY },
     { "connection",     T_OBJECT_EX,    offsetof(dm_Cursor, connection),       READONLY },       
     { "column_names",   T_OBJECT_EX,    offsetof(dm_Cursor, column_names),     READONLY },
-    { "lastrowid",      T_OBJECT,       offsetof(dm_Cursor, lastrowid_obj),    RESTRICTED },
+    { "lastrowid",      T_OBJECT,       offsetof(dm_Cursor, lastrowid_obj),    READONLY },
     { "execid",         T_OBJECT,       offsetof(dm_Cursor, execid_obj),       READONLY },
     { "_isClosed",      T_INT,          offsetof(dm_Cursor, isClosed),         READ_RESTRICTED },
     { "_statement",     T_OBJECT,       offsetof(dm_Cursor, statement),        READ_RESTRICTED },

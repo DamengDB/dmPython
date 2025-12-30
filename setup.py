@@ -39,7 +39,7 @@ else:
     from setuptools import setup, Extension
 
 # define build constants
-BUILD_VERSION = "2.5.26"
+BUILD_VERSION = "2.5.30"
 dm_version = os.environ.get("DM_VER")
 
 if dm_version is not None:
@@ -277,8 +277,9 @@ if sys.version_info[:2] < (3, 12):
 
 # define classifiers for the package index
 classifiers = [
-        "Development Status :: 6 - Mature",
+        "Development Status :: 1 - Mature",
         "Intended Audience :: Developers",
+        "License :: DPI Approved :: Python Software Foundation License",
         "Natural Language :: English",
         "Operating System :: OS Independent",
         "Programming Language :: C",
@@ -302,31 +303,31 @@ extension = Extension(
         depends = [],        
         define_macros = defineMacros
         )
-
-with open('ChangeLogs.md', 'r', encoding='utf-8') as file:
-    content = file.read()
-
 if sys.version_info[:2] < (3, 12):
     # perform the setup
     setup(
-            name = "dmpython",
+            name = "dmPython",
             version = BUILD_VERSION,
             distclass = Distribution,
             description = "Python interface to Dameng",        
             cmdclass = commandClasses,        
-            long_description = content,
-            long_description_content_type="text/markdown",
+            long_description = \
+                "Python interface to Dameng conforming to the Python DB API 2.0 "
+                "specification.\n"
+                "See http://www.python.org/topics/database/DatabaseAPI-2.0.html.",        
             ext_modules = [extension],
             keywords = "Dameng",
             license = "Python Software Foundation License",
             classifiers = classifiers)
 else:
     setup(
-            name = "dmpython",
+            name = "dmPython",
             version = BUILD_VERSION,
             description = "Python interface to Dameng",              
-            long_description = content,
-            long_description_content_type="text/markdown",
+            long_description = \
+                "Python interface to Dameng conforming to the Python DB API 2.0 "
+                "specification.\n"
+                "See http://www.python.org/topics/database/DatabaseAPI-2.0.html.",        
             ext_modules = [extension],
             keywords = "Dameng",
             license = "Python Software Foundation License",

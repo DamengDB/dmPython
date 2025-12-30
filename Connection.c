@@ -6,9 +6,16 @@
 #include "Error.h"
 #include "Buffer.h"
 #include "trc.h"
+
+#define DMPY_ATTR_MAX_IDENTIFIER_LENGTH             11111
+#define DMPY_ATTR_STMT_CACHE_SIZE                   11112
+#define DMPY_ATTR_OUTPUT_TYPE_HANDLER               11113
+
 //-----------------------------------------------------------------------------
 // Constants for the Python type "Connection" Attributes
 //-----------------------------------------------------------------------------
+#define DMPYTHON_STR_MAXLEN 2048
+
 static	udint4		gc_attr_access_mode		= DSQL_ATTR_ACCESS_MODE;
 static  udint4      gc_attr_async_enalbe    = DSQL_ATTR_ASYNC_ENABLE;
 static  udint4      gc_attr_auto_ipd        = DSQL_ATTR_AUTO_IPD;
@@ -39,6 +46,9 @@ static	udint4		gc_attr_ssl_path		= DSQL_ATTR_SSL_PATH;
 static  udint4      gc_attr_mpp_login       = DSQL_ATTR_MPP_LOGIN;
 static	udint4		gc_attr_server_version	= DSQL_ATTR_SERVER_VERSION;
 static  udint4      gc_attr_cursor_rollback_behavior = DSQL_ATTR_CURSOR_ROLLBACK_BEHAVIOR;
+static  udint4      gc_attr_max_identifier_length = DMPY_ATTR_MAX_IDENTIFIER_LENGTH;
+static  udint4      gc_attr_stmt_cache_size  = DMPY_ATTR_STMT_CACHE_SIZE;
+static  udint4      gc_attr_output_type_handler = DMPY_ATTR_OUTPUT_TYPE_HANDLER;
 
 /* 不可读取，只允许设置 */
 static	udint4		gc_attr_ssl_pwd			= DSQL_ATTR_SSL_PWD;
@@ -99,6 +109,9 @@ Connection_init_inner(
     Py_INCREF(Py_None);
     self->catalog           = Py_None;
 
+    Py_INCREF(Py_None);
+    self->parse_type        = Py_None;
+
     self->isConnected       = 0;
 }
 
@@ -122,6 +135,7 @@ Connection_Free_inner(
     Py_CLEAR(self->warning);
     Py_CLEAR(self->catalog);
     Py_CLEAR(self->version);
+    Py_CLEAR(self->parse_type);
 }
 
 //-----------------------------------------------------------------------------
@@ -440,24 +454,9 @@ Connection_Close_inner(
     {
         goto fun_end;
 	}
-    Py_BEGIN_ALLOW_THREADS
-        dpi_get_con_attr(self->hcon, DSQL_ATTR_CONNECTION_DEAD, &is_active, sizeof(sdint4), NULL);
-    Py_END_ALLOW_THREADS
-        if (is_active != DSQL_CD_TRUE)
-            // perform a rollback
-        {
-            Py_BEGIN_ALLOW_THREADS
-                status = dpi_rollback(self->hcon);
-            Py_END_ALLOW_THREADS
 
-                if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, status,
-                    "Connection_Close(): rollback") < 0)
-                    return NULL;
-        }
 	// logout of the server		
-	Py_BEGIN_ALLOW_THREADS
-		status = dpi_logout(self->hcon);
-	Py_END_ALLOW_THREADS
+	status = dpi_logout(self->hcon);
 	if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, status,
 		"Connection_Close(): logout") < 0)
 		return NULL;	
@@ -467,9 +466,7 @@ fun_end:
 	// free handle
 	if (self->hcon)
     {
-		Py_BEGIN_ALLOW_THREADS
-			dpi_free_con(self->hcon);
-		Py_END_ALLOW_THREADS
+		dpi_free_con(self->hcon);
 		self->hcon = NULL;
 	}
 
@@ -674,7 +671,16 @@ static PyObject	*Connection_GetConAttr(
                     return Py_BuildValue("i", uint4Value);
                 }
 
-            break;         
+            break;
+
+        case DMPY_ATTR_MAX_IDENTIFIER_LENGTH:
+            return Py_BuildValue("i", 128);
+
+        case DMPY_ATTR_STMT_CACHE_SIZE:
+            return Py_BuildValue("i", 20);
+
+        case DMPY_ATTR_OUTPUT_TYPE_HANDLER:
+            return Py_None;
 
 		default:               
 
@@ -1224,6 +1230,7 @@ Connection_Init(
     PyObject*       local_code_obj = NULL;
     PyObject*       cursor_class_obj = NULL;
     PyObject*       catalog_obj = NULL;
+    PyObject*       parse_type_obj = NULL;
 
     char*           username_def = "SYSDBA";
     char*           host_def = "localhost";
@@ -1259,7 +1266,8 @@ Connection_Init(
                                     "compress_msg", "use_stmt_pool", "ssl_path", "ssl_pwd", 
                                     "mpp_login", "ukey_name", "ukey_pin", "rwseparate", 
                                     "rwseparate_percent", "cursor_rollback_behavior", "lang_id", 
-                                    "local_code", "cursorclass", "schema", "shake_crypto", "catalog", "dmsvc_path", NULL};
+                                    "local_code", "cursorclass", "schema", "shake_crypto", "catalog", "dmsvc_path",
+                                    "parse_type", NULL};
 
     /** 初始化Connection部分成员变量 **/
     Connection_init_inner(self);
@@ -1275,14 +1283,14 @@ Connection_Init(
     self->environment->warning = &self->warning;
 
 	// parse arguments
-   if (!PyArg_ParseTupleAndKeywords(args, keywordArgs,"|OOOOOOOOOOOsOOssOssOOOOOOOsOs", keywordList,     
+   if (!PyArg_ParseTupleAndKeywords(args, keywordArgs,"|OOOOOOOOOOOsOOssOssOOOOOOOsOsO", keywordList,     
         &username_obj, &password_obj, &dsn_obj, &host_obj, &server_obj, &port_obj,  
         &accessmode_obj, &autocommit_obj, &conn_timeout_obj, &login_timeout_obj, 
         &txn_isolation_obj, &app_name, 
         &cmpress_msg_obj, &stmt_pool_obj, &ssl_path, &ssl_pwd, 
         &mpp_login_obj, &ukey_name, &ukey_pin, &rwseparate_obj, 
         &rwseparate_percent_obj, &cursor_rollback_obj, &lang_id_obj, &local_code_obj, &cursor_class_obj, &schema_obj,
-        &shake_crypto, &catalog_obj, &dmsvc_path))
+        &shake_crypto, &catalog_obj, &dmsvc_path, &parse_type_obj))
         return -1;	      
 
    /* server和host只允许指定一个 */
@@ -1295,12 +1303,18 @@ Connection_Init(
    //keep a copy of schema_obj
    if (schema_obj != NULL)
    {
+       if(py_String_GetSize(schema_obj) > DMPYTHON_STR_MAXLEN)
+           goto fun_end;
+
        Py_XINCREF(schema_obj);
        self->schema = schema_obj;
    }
 
    if (catalog_obj != NULL)
    {
+       if (py_String_GetSize(catalog_obj) > DMPYTHON_STR_MAXLEN)
+           goto fun_end;
+
        Py_XINCREF(catalog_obj);
        self->catalog = catalog_obj;
    }
@@ -1308,6 +1322,9 @@ Connection_Init(
 	// keep a copy of the credentials
     if (username_obj != NULL)
     {
+        if (py_String_GetSize(username_obj) > DMPYTHON_STR_MAXLEN)
+            goto fun_end;
+
         Py_XINCREF(username_obj);
         self->username = username_obj;
 
@@ -1364,6 +1381,8 @@ Connection_Init(
 
     if (password_obj != NULL)
     {
+        if (py_String_GetSize(password_obj) > DMPYTHON_STR_MAXLEN)
+            goto fun_end;
         /* 如果已从"user/password@ip:port"中解析出password，则不允许再用关键字方式覆盖 */
         if (self->password == Py_None)
         {
@@ -1383,6 +1402,8 @@ Connection_Init(
 
     if (dsn_obj != NULL)
     {
+        if (py_String_GetSize(dsn_obj) > DMPYTHON_STR_MAXLEN)
+            goto fun_end;
         /* 如果已从"user/password@ip:port"中解析出server，则不允许再用dsn关键字方式覆盖 */
         if (self->server == Py_None)
         {
@@ -1418,6 +1439,9 @@ Connection_Init(
     /* server和host只允许指定一个 */
     if (host_obj != NULL && self->server == Py_None)
     {
+        if (py_String_GetSize(host_obj) > DMPYTHON_STR_MAXLEN)
+            goto fun_end;
+        
         Py_XINCREF(host_obj);
         self->server = host_obj;
         /* host为ip:port形式，解析到对应字段去 */
@@ -1446,6 +1470,9 @@ Connection_Init(
     }
     else if (server_obj != NULL && self->server == Py_None)
     {
+        if (py_String_GetSize(server_obj) > DMPYTHON_STR_MAXLEN)
+            goto fun_end;
+
         Py_XINCREF(server_obj);
         self->server = server_obj;
         /* server为ip:port形式，解析到对应字段去 */
@@ -1481,6 +1508,9 @@ Connection_Init(
     {       
         if (py_String_Check(port_obj))
         {
+            if (py_String_GetSize(port_obj) > DMPYTHON_STR_MAXLEN)
+                goto fun_end;
+
             str = py_String_asString(port_obj);
             if (PyErr_Occurred())
             {
@@ -1834,6 +1864,9 @@ Connection_Init(
     //app_name
     if (app_name != NULL)
     {
+        if (strlen(app_name) > DMPYTHON_STR_MAXLEN)
+            goto fun_end;
+
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_APP_NAME, (dpointer)app_name, (sdint4)strlen(app_name));
         Py_END_ALLOW_THREADS
@@ -1846,6 +1879,9 @@ Connection_Init(
     //ssl_path
     if (ssl_path != NULL)
     {
+        if (strlen(ssl_path) > DMPYTHON_STR_MAXLEN)
+            goto fun_end;
+
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_SSL_PATH, (dpointer)ssl_path, (sdint4)strlen(ssl_path));
         Py_END_ALLOW_THREADS
@@ -1858,6 +1894,9 @@ Connection_Init(
     //ssl_pwd
     if (ssl_pwd != NULL)
     {
+        if (strlen(ssl_pwd) > DMPYTHON_STR_MAXLEN)
+            goto fun_end;
+        
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_SSL_PWD, (dpointer)ssl_pwd, (sdint4)strlen(ssl_pwd));
         Py_END_ALLOW_THREADS
@@ -1870,6 +1909,9 @@ Connection_Init(
     //ukey_name
     if (ukey_name != NULL)
     {
+        if (strlen(ukey_name) > DMPYTHON_STR_MAXLEN)
+            goto fun_end;
+
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_UKEY_NAME, (dpointer)ukey_name, (sdint4)strlen(ukey_name));
         Py_END_ALLOW_THREADS
@@ -1881,6 +1923,9 @@ Connection_Init(
 
     if (ukey_pin != NULL)
     {
+        if (strlen(ukey_pin) > DMPYTHON_STR_MAXLEN)
+            goto fun_end;
+
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_UKEY_PIN, (dpointer)ukey_pin, (sdint4)strlen(ukey_pin));
         Py_END_ALLOW_THREADS
@@ -1893,6 +1938,9 @@ Connection_Init(
     //shake_crypto
     if (shake_crypto != NULL)
     {
+        if (strlen(shake_crypto) > DMPYTHON_STR_MAXLEN)
+            goto fun_end;
+
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_SHAKE_CRYPTO, (dpointer)shake_crypto, (sdint4)strlen(shake_crypto));
         Py_END_ALLOW_THREADS
@@ -1906,6 +1954,9 @@ Connection_Init(
 #ifdef DSQL_ATTR_DM_SVC_PATH
     if (dmsvc_path != NULL)
     {
+        if (strlen(dmsvc_path) > DMPYTHON_STR_MAXLEN)
+            goto fun_end;
+        
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_DM_SVC_PATH, (dpointer)dmsvc_path, DSQL_NTS);
         Py_END_ALLOW_THREADS
@@ -1916,7 +1967,20 @@ Connection_Init(
     }
 #endif
 
+    if (parse_type_obj != NULL)
+    {
+        if (py_String_GetSize(parse_type_obj) > 10)
+            goto fun_end;
+
+        Py_XINCREF(parse_type_obj);
+        self->parse_type = parse_type_obj;
+    }
+
 	return Connection_connect(self);
+
+fun_end:
+    PyErr_SetString(g_ErrorException, "invalid arguments");
+    return -1;
 }
 
 static
@@ -2250,6 +2314,14 @@ static PyGetSetDef g_ConnectionCalcMembers[] = {
 
     { "inst_name",                      (getter)Connection_GetConAttr,  0,                              0, &gc_attr_instance_name},
     { "DSQL_ATTR_INSTANCE_NAME",        (getter)Connection_GetConAttr,  0,                              0, &gc_attr_instance_name},
+
+    { "version",                        (getter)Connection_GetConAttr,  0,                              0,  &gc_attr_server_version},
+
+    { "autocommit",                     (getter)Connection_GetConAttr, (setter)Connection_SetConAttr,   0,  &gc_attr_autocommit},
+
+    { "max_identifier_length",          (getter)Connection_GetConAttr,  0,                              0,  &gc_attr_max_identifier_length},
+    { "outputtypehandler",              (getter)Connection_GetConAttr,  0,                              0,  &gc_attr_output_type_handler},
+    { "stmtcachesize",                  (getter)Connection_GetConAttr,  0,                              0,  &gc_attr_stmt_cache_size},
 
     { NULL }
 };

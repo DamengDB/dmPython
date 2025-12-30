@@ -25,7 +25,7 @@ extern "C" { 			/* Assume C declarations for C++   */
 
 /** 需同setup.py中保持一致 **/
 #ifndef BUILD_VERSION
-#define BUILD_VERSION                   2.5.26
+#define BUILD_VERSION                   2.5.30
 #endif
 
 #ifndef BUILD_VERSION_MAJOR

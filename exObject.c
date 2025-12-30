@@ -1366,7 +1366,8 @@ ExObjVar_NormalConvertToPython(
     DPIRETURN               rt = DSQL_SUCCESS;  
     PyObject*               retObj;
     slength                 data_len;
-    udint4                  offset = 0;
+    slength                 true_data_len = 0;
+    char*                   data_ptr = NULL;
 
     valType     = dmVar_TypeBySQLType(ObjType->sql_type, 1);
     if (valType == NULL)
@@ -1375,14 +1376,15 @@ ExObjVar_NormalConvertToPython(
     if (valType->pythonType == &g_LongBinaryVarType ||
         valType->pythonType == &g_LongStringVarType)
     {
-        rt      = dpi_get_obj_val(hobj, val_nth, valType->cType, NULL, 0, &data_len);
+        rt      = dpi_get_obj_val(hobj, val_nth, valType->cType, NULL, 0, &true_data_len);
         if (Environment_CheckForError(ObjType->environment, hobj, DSQL_HANDLE_OBJECT, rt, 
             "ExObjVar_NormalConvertToPython():dpi_get_obj_val for LONG BINARY or LONG CHAR") < 0)
         {            
             return NULL;
         }    
 
-        offset  += sizeof(udint4);
+        data_ptr = PyMem_Malloc(true_data_len);
+        data_len = ObjType->prec;
     }
     else
     {
@@ -1391,22 +1393,30 @@ ExObjVar_NormalConvertToPython(
 
     valObj      = dmVar_NewByVarType(ownCursor, valType, 1, data_len);
     if (valObj == NULL)
-        return NULL;       
+        return NULL;   
 
-    rt          = dpi_get_obj_val(hobj, val_nth, valType->cType, (dpointer)((sdbyte*)valObj->data + offset), valObj->bufferSize, &valObj->indicator[0]);
-    if (Environment_CheckForError(ObjType->environment, hobj, DSQL_HANDLE_OBJECT, rt, 
-        "ExObjVar_NormalConvertToPython():dpi_get_obj_val") < 0)
+    if (valType->pythonType == &g_LongBinaryVarType ||
+        valType->pythonType == &g_LongStringVarType)
     {
-        Py_CLEAR(valObj);
-        return NULL;
+        ((sdint8*)valObj->data)[0] = (sdint8)(int3264)data_ptr;
+        rt = dpi_get_obj_val(hobj, val_nth, valType->cType, (dpointer)(((sdint8*)valObj->data)[0]), true_data_len, &valObj->indicator[0]);
+        if (Environment_CheckForError(ObjType->environment, hobj, DSQL_HANDLE_OBJECT, rt, 
+            "ExObjVar_NormalConvertToPython():dpi_get_obj_val") < 0)
+        {
+            Py_CLEAR(valObj);
+            return NULL;
+        }
     }
-
-    /** 更新前4个字节的长度记录 **/
-    if (offset > 0)
+    else
     {
-        *((udint4 *) valObj->data) = valObj->indicator[0];
+        rt = dpi_get_obj_val(hobj, val_nth, valType->cType, (dpointer)((sdbyte*)valObj->data), valObj->bufferSize, &valObj->indicator[0]);
+        if (Environment_CheckForError(ObjType->environment, hobj, DSQL_HANDLE_OBJECT, rt,
+            "ExObjVar_NormalConvertToPython():dpi_get_obj_val") < 0)
+        {
+            Py_CLEAR(valObj);
+            return NULL;
+        }
     }
-
     valObj->actualLength[0] = valObj->indicator[0];
     
     retObj  = dmVar_GetValue(valObj, 0);

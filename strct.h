@@ -94,6 +94,7 @@ typedef struct {
     PyObject		*explain;
     PyObject		*warning;
     PyObject        *catalog;
+    PyObject        *parse_type;
 	sdint2			autocommit;
 	sdint2			commitMode;
     sdint4          cursor_class;
