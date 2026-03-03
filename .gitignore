@@ -1,0 +1,25 @@
+# DPI headers (proprietary, not distributed)
+dpi_include/
+
+# Build artifacts
+build/
+dist/
+dist_fixed/
+*.egg-info/
+*.so
+*.dylib
+
+# Go bridge output
+dpi_bridge/libdmdpi.dylib
+dpi_bridge/libdmdpi.h
+
+# Environment
+.venv/
+.dm_home/
+__pycache__/
+
+# IDE
+.idea/
+
+# Trace log
+dmPython_trace.log

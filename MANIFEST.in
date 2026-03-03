@@ -1,0 +1,8 @@
+include *.c *.h LICENSE README.md setup.py pyproject.toml
+recursive-include dpi_bridge *.go
+include dpi_bridge/go.mod dpi_bridge/go.sum
+exclude dpi_bridge/libdmdpi.dylib dpi_bridge/libdmdpi.h
+prune build
+prune .venv
+prune .dm_home
+prune .claude
