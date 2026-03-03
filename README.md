@@ -1,51 +1,182 @@
-# dmpython
+# dmPython
 
-该仓库主要提供了支持python连接达梦数据库的python库
+dmPython 是达梦数据库（DM8）的原生 Python 驱动程序，遵循 [Python DB API 2.0](https://www.python.org/dev/peps/pep-0249/) 规范。通过 C 扩展模块和 DPI（Dameng Programming Interface）库与达梦数据库通信。
 
-## 主要功能
+**当前版本：** 2.5.30
 
-支持使用python连接达梦数据库，通过python接口操作数据库，进行一系列数据库中例如创表、删表、对于数据增删改查等功能，对于数据内容进行展示。
+## 特性
 
-## 使用方法
+- 遵循 Python DB API 2.0 规范
+- 支持 Python 2.7 及 Python 3.x（含 3.12+）
+- 支持 SQLAlchemy 和 Django 框架
+- 支持 BLOB/CLOB、BFILE、对象类型等丰富的数据类型
+- 支持元组游标和字典游标两种模式
+- 跨平台：Linux、Windows、macOS
 
-dmPython源码依赖DM安装目录或者drivers目录(driver目录为DM的驱动目录)中提供的dpi头文件，安装前需要检查环境中是否存在DM安装或者drivers目录，并设置DM_HOME目录： export DM_HOME=/opt/dmdbms 或者export DM_HOME=/drivers 具体路径以实际环境为准，DM_HOME路径下面必须有include目录或者dpi/include目录
+## 前置条件
 
-在Windows操作系统下安装dmPython只需要直接执行exe文件即可。Windows操作系统下生成exe文件操作如下： 1.进入到dmPython源码所在目录（setup.py文件所在路径） 2.执行命令：python setup.py bdist_wininst 3.在dist目录下会生成相关安装文件
+1. 已安装达梦数据库或拥有达梦驱动目录（drivers）
+2. 设置 `DM_HOME` 环境变量，指向达梦安装目录或 drivers 目录，该路径下必须有 `include` 或 `dpi/include` 目录
 
-LINUX安装方法： 1.进入到dmPython源码所在目录（setup.py文件所在路径） 2.执行命令：python setup.py bdist_rpm 3.在dist目录下会生成相关rpm包 4.在Linux操作系统下使用rpm包安装dmPython。安装和卸载命令参考如下： 安装：rpm -ivh dmPython-2.1-7.1-py33-1.x86_64.rpm --nodeps 卸载：rpm -e dmPython-2.1-1.x86_64
+```bash
+# Linux / macOS
+export DM_HOME=/opt/dmdbms
 
-windows和linux也可以直接使用源码安装，操作如下： 1.进入到dmPython源码所在目录（setup.py文件所在路径） 2.执行命令：python setup.py install
+# Windows (PowerShell)
+$env:DM_HOME = "C:\dmdbms"
+```
 
-其他可能有帮助的信息
+## 安装
 
-windows平台生成安装包(exe) python setup.py bdist_wininst
+### 源码安装（推荐，跨平台通用）
 
-LINUX平台生成安装包（rprm） python setup.py bdist_rpm
+```bash
+cd dmPython
+python setup.py install
+```
 
-若安装过程中出现依赖问题，则：
-rpm -ivh file.rpm --nodeps
-linux安装命令： rpm -ivh dmPython-1.1-7.1-py26-1.x86_64.rpm --nodeps
+### 生成平台安装包
 
-linux卸载命令： rpm -e dmPython-1.1-1.x86_64
+```bash
+# Linux RPM
+python setup.py bdist_rpm
 
-源码直接安装（不分平台） python setup.py install
+# Windows
+python setup.py bdist_wininst
+```
 
-64位平台安装时，需增加DM64宏： 安装脚本setup.py中全局变量defineMacros使用defineMacros = [('DM64', None),];否则，使用defineMacros = []。
+安装 RPM 包：
 
-平台执行上述命令时，需先进行如下准备工作： 定义环境变量DM_HOME，WINDOWS平台需要将其添加到环境变量PATH中，linux则不需要： 指定为DM安装目录bin的上层目录，如DM_HOME=C:\dmdbms 或者 export DM_HOME=/opt/dmdbms
+```bash
+rpm -ivh dist/dmPython-*.rpm --nodeps
+```
 
-==============================》 WIN平台可能遇到如下问题： Unable to find vcvarsall.bat
+卸载 RPM 包：
 
-解决方案如下： 进入当前使用python安装目录中Lib/distutils，找到文件msvc9compiler.py，使用UE或者其他文本编辑器将其打开。 在文件msvc9compiler.py中找到： vc_env = query_vcvarsall(VSERSION,plat_spec)
+```bash
+rpm -e dmPython
+```
 
-根据使用本机安装的VS的版本号，对应安装目录（如：C:\Program Files\Microsoft Visual Studio 10.0），则改为： vc_env = query_vcvarsall(10,plat_spec)
+## 运行时配置
 
-==============================》 WIN平台执行import dmPython时，可能会遇到如下问题：
+dmPython 运行时依赖 DPI 动态库，需确保系统能找到该库文件：
 
-import dmPython Traceback (most recent call last): File "", line 1, in ImportError: DLL load failed: 找不到指定的模块
+| 平台    | 库文件            | 配置方式                                      |
+| ------- | ----------------- | --------------------------------------------- |
+| Linux   | `libdmdpi.so`     | `export LD_LIBRARY_PATH=/opt/dmdbms/bin`      |
+| Windows | `dmdpi.dll`       | 将 DPI 所在目录添加到 `PATH` 环境变量         |
+| macOS   | `libdmdpi.dylib`  | `export LD_LIBRARY_PATH=/opt/dmdbms/bin`      |
 
-此时因为dmPython找不到动态库dpi（linux为libdmdpi.so，windows为dmdpi.dll、dmdpi.lib），需要到dpi所在目录执行或者配置环境变量指向dpi所在目录； 若有安装DM，直接配置环境变量指向bin目录或者指向drivers/dpi。
+## 快速开始
 
-linux为例：export LD_LIBRARY_PATH=/opt/dmdbms/bin或者export LD_LIBRARY_PATH=/drivers/dpi
+```python
+import dmPython
 
-==============================》 用户python使用过程中遇到undefined symbol:PyUnicodeUCS2_Format 此问题为编译dmPython的环境的UCS编码与执行环境不匹配导致，常见的有以下两种情况： 1.在不同的操作系统环境中编译和使用dmPython 2.编译或安装dmPython的python程序本身UCS编码与当前操作系统不一致导致 这两种情况都与dmPython源码无关，检查当前环境即可 解决： 第一种直接在同一台机子上编译和使用即可 第二种一般是使用源码安装了python，然后再用python去编译或安装dmPython，因此需要检查在使用源码安装python时，使用的编码与操作系统是否一致，源码安装python参考命令如下： ./configure --prefix=$YOUR_PATH --enable-unicode=ucs4 --enable-unicode选项指定成与操作系统一致的编码即可
+# 建立连接
+conn = dmPython.connect(user='SYSDBA', password='SYSDBA001', server='localhost', port=5236)
+
+# 创建游标并执行 SQL
+cursor = conn.cursor()
+cursor.execute("SELECT * FROM SYSOBJECTS WHERE ROWNUM <= 5")
+
+# 获取结果
+rows = cursor.fetchall()
+for row in rows:
+    print(row)
+
+# 关闭连接
+cursor.close()
+conn.close()
+```
+
+## 构建与测试
+
+```bash
+# 仅编译（不安装）
+python setup.py build
+
+# 运行测试
+python setup.py test
+```
+
+### 调试追踪
+
+在 `setup.py` 中取消以下注释，重新编译后会在当前目录生成 `dmPython_trace.log`：
+
+```python
+defineMacros.append(('TRACE', None))
+```
+
+### 达梦版本
+
+默认针对 DM 8.1 构建，可通过环境变量覆盖：
+
+```bash
+export DM_VER=8.2
+```
+
+## 常见问题
+
+### Windows: `Unable to find vcvarsall.bat`
+
+进入 Python 安装目录 `Lib/distutils/msvc9compiler.py`，找到：
+
+```python
+vc_env = query_vcvarsall(VERSION, plat_spec)
+```
+
+将 `VERSION` 替换为本机安装的 Visual Studio 版本号，例如：
+
+```python
+vc_env = query_vcvarsall(10, plat_spec)
+```
+
+### `ImportError: DLL load failed: 找不到指定的模块`
+
+dmPython 无法找到 DPI 动态库。请按上方「运行时配置」章节配置环境变量，使系统能定位到 `dmdpi.dll`（Windows）或 `libdmdpi.so`（Linux）。
+
+### `undefined symbol: PyUnicodeUCS2_Format`
+
+编译 dmPython 的环境 UCS 编码与运行环境不匹配。常见原因：
+
+1. **跨平台编译**：在不同操作系统上编译和使用 dmPython。解决方法：在同一台机器上编译和使用。
+2. **Python 源码安装时编码不一致**：使用源码安装 Python 时，确保 `--enable-unicode` 选项与操作系统一致：
+
+```bash
+./configure --prefix=$YOUR_PATH --enable-unicode=ucs4
+```
+
+## 项目结构
+
+```
+dmPython/
+├── setup.py          # 构建脚本
+├── py_Dameng.c/h     # 模块入口，类型注册，异常层次
+├── strct.h           # 核心结构定义 (Environment, Connection, Cursor)
+├── Connection.c      # 连接管理
+├── Cursor.c          # 游标操作，SQL 执行
+├── row.c/h           # 结果行对象
+├── Environment.c     # 环境管理
+├── Error.c           # 错误处理
+├── Buffer.c          # 缓冲区管理
+├── var.c             # 变量管理核心
+├── var_pub.h         # 变量类型接口定义
+├── vString.c         # 字符串类型
+├── vNumber.c         # 数值类型
+├── vDateTime.c       # 日期时间类型
+├── vInterval.c       # 间隔类型
+├── vLob.c            # BLOB/CLOB
+├── vBfile.c          # BFILE
+├── vCursor.c         # 嵌套游标
+├── vObject.c         # 对象类型
+├── vlong.c           # 长数据类型
+├── exLob.c           # 外部 LOB 接口
+├── exObject.c        # 外部对象接口
+├── exBfile.c         # 外部 BFILE 接口
+├── tObject.c         # 对象类型元数据
+└── trc.c             # 调试追踪
+```
+
+## 许可证
+
+Python Software Foundation License
