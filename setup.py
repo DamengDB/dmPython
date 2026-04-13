@@ -39,7 +39,7 @@ else:
     from setuptools import setup, Extension
 
 # define build constants
-BUILD_VERSION = "2.5.30"
+BUILD_VERSION = "2.5.32"
 dm_version = os.environ.get("DM_VER")
 
 if dm_version is not None:
@@ -277,9 +277,8 @@ if sys.version_info[:2] < (3, 12):
 
 # define classifiers for the package index
 classifiers = [
-        "Development Status :: 1 - Mature",
+        "Development Status :: 6 - Mature",
         "Intended Audience :: Developers",
-        "License :: DPI Approved :: Python Software Foundation License",
         "Natural Language :: English",
         "Operating System :: OS Independent",
         "Programming Language :: C",
@@ -300,7 +299,7 @@ extension = Extension(
         sources = ['py_Dameng.c','row.c','Cursor.c','Connection.c','Environment.c','Error.c','Buffer.c',
                    'exLob.c','exObject.c','tObject.c', 'var.c','vCursor.c','vDateTime.c','vInterval.c','vLob.c','vNumber.c',
                    'vObject.c', 'vString.c', 'vlong.c', 'exBfile.c', 'vBfile.c','trc.c'],
-        depends = [],        
+        depends = [],
         define_macros = defineMacros
         )
 if sys.version_info[:2] < (3, 12):

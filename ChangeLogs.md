@@ -4,9 +4,17 @@
 
 ## Extensions
 
--   支持sqlalchemy和django框架
+-   支持SQLAlchemy和Django框架
 
 ## Change Logs
+
+**dmPython v2.5.32(2025-11-6)**
+
+- 修复了连接jdbc模式的dmgateway执行查询时报数组越界的问题
+
+**dmPython v2.5.31(2025-11-5)**
+
+- 增加了对boolean类型的支持
 
 **dmPython v2.5.30(2025-9-3)**
 

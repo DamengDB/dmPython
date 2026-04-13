@@ -937,6 +937,9 @@ dmVar_TypeBySQLType (
         return &vt_NumberAsString;
 
     case DSQL_BIT:
+#ifdef DSQL_BOOLEAN
+    case DSQL_BOOLEAN:
+#endif
         return &vt_Boolean;
 
     case DSQL_TIME_TZ:

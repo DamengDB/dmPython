@@ -2630,7 +2630,12 @@ Cursor_MoreRows(
 
 		if (self->actualRows == (ulength)(-1) || self->rowNum == self->actualRows)
 			if (Cursor_InternalFetch(self) < 0)
-				return -1;		
+				return -1;
+
+        if (self->actualRows == 0)
+        {
+            return 0;
+        }
 	}
 	
 	return 1;
@@ -2816,7 +2821,7 @@ Cursor_Many_Fetch(
 	ulength		index;
 	PyObject	*list, *tuple;
 
-	list = PyList_New(rowSize);
+	list = PyList_New(0);
 	for (index = 0; index < rowSize; index ++){
 		tuple = Cursor_One_Fetch(self);
 		if (tuple == NULL){
@@ -2824,13 +2829,45 @@ Cursor_Many_Fetch(
 			return NULL;
 		}
 
-		PyList_SET_ITEM(list, index, tuple);
+        if (tuple == Py_None)
+        {
+            return list;
+        }
+
+        PyList_Append(list, tuple);
 	}
 
 	//Py_INCREF(list);
 	return list;
 }
 
+PyObject*
+Cursor_All_Fetch(
+	dm_Cursor*      self
+)
+{
+    ulength     row_count = 0;
+    PyObject    *list, *tuple;
+
+    list = PyList_New(0);
+    while(1)
+    {
+        tuple = Cursor_One_Fetch(self);
+        if (tuple == NULL){
+            Py_DECREF(list);
+            return NULL;
+        }
+        else if (tuple == Py_None)
+        {
+            break;
+        }
+        row_count++;
+        PyList_Append(list, tuple);
+    }
+    self->totalRows = row_count;
+    //Py_INCREF(list);
+    return list;
+}
 
 static 
 PyObject*
@@ -2915,11 +2952,18 @@ Cursor_FetchAll(
 	if (Cursor_VerifyFetch(self) < 0)
 		goto fun_end;
 
-	rowToGet    = (ulength)(self->totalRows - self->rowCount);
+    if (self->totalRows != INT_MAX)
+    {
+        rowToGet    = (ulength)(self->totalRows - self->rowCount);
     
-    DMPYTHON_TRACE_INFO(dpy_trace(NULL, args, "ENTER Cursor_FetchAll,before Cursor_Many_Fetch rowToGet ["slengthprefix"]\n", rowToGet));
+        DMPYTHON_TRACE_INFO(dpy_trace(NULL, args, "ENTER Cursor_FetchAll,before Cursor_Many_Fetch rowToGet ["slengthprefix"]\n", rowToGet));
 
-	ret_obj     = Cursor_Many_Fetch(self, rowToGet);
+        ret_obj     = Cursor_Many_Fetch(self, rowToGet);
+    }
+    else
+    {
+        ret_obj = Cursor_All_Fetch(self);
+    }
 
 fun_end:
 
