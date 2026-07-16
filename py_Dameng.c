@@ -41,12 +41,6 @@
 #define TYPE_ERROR        "expecting string, unicode or buffer object"
 #endif
 
-#ifdef WIN32
-#define DIR_CHAR            '\\'
-#else
-#define DIR_CHAR             '/'
-#endif
-
 #define MAX_PATH_LEN        256
 #define MAX_LINE_LENGTH     100
 typedef sdbyte               pathname_t[MAX_PATH_LEN + 1];
@@ -554,9 +548,9 @@ dmPython_get_svc_path(udbyte* real_path)
     {
         path_len = strlen(svc_path);
         if (svc_path[path_len - 1] == DIR_CHAR)
-            aq_sprintf(real_path, 513, "%s%s", svc_path, "dm_svc.conf");
+            aq_sprintf(real_path, FILE_PATH_LEN, "%s%s", svc_path, "dm_svc.conf");
         else
-            aq_sprintf(real_path, 513, "%s%c%s", svc_path, DIR_CHAR, "dm_svc.conf");
+            aq_sprintf(real_path, FILE_PATH_LEN, "%s%c%s", svc_path, DIR_CHAR, "dm_svc.conf");
     }
 
     //如果不存在，则判断系统目录下是否存在dm_svc.conf
@@ -569,7 +563,7 @@ dmPython_get_svc_path(udbyte* real_path)
         strcpy(path,"/etc");
 #endif
 
-        aq_sprintf(real_path, 513, "%s%c%s", path, DIR_CHAR, "dm_svc.conf");
+        aq_sprintf(real_path, FILE_PATH_LEN, "%s%c%s", path, DIR_CHAR, "dm_svc.conf");
     }
 
     //文件不存在返回NULL

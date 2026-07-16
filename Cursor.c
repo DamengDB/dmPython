@@ -291,11 +291,14 @@ Cursor_New(
 
     //在Cursor_New中设置，避免close后取不到rowcount值
     self->totalRows     = -1;
+    self->lazy_totalRows = -1;
 
     self->is_iter       = 0;
     self->output_stream = 0;
     self->outparam_num  = 0;
     self->param_value   = NULL;
+    self->lazy_rowcount = 0;
+    self->cursor_class  = 0;
     return (PyObject*)self;
 }
 
@@ -830,18 +833,27 @@ Cursor_SetRowCount(
 		// 记录一次fetch操作读取结果集中剩余行数
 		self->actualRows    = -1;
 
-		Py_BEGIN_ALLOW_THREADS
-			status = dpi_row_count(self->handle, &rowCount);
-		Py_END_ALLOW_THREADS
+        if(self->lazy_rowcount == 0)
+        { 
+            Py_BEGIN_ALLOW_THREADS
+                status = dpi_row_count(self->handle, &rowCount);
+            Py_END_ALLOW_THREADS
 
-		if (Environment_CheckForError(self->environment, self->handle, DSQL_HANDLE_STMT, status,
-			"Cursor_SetRowCount()") < 0)
-        {
-			return -1;
+            if (Environment_CheckForError(self->environment, self->handle, DSQL_HANDLE_STMT, status,
+                "Cursor_SetRowCount()") < 0)
+            {
+                return -1;
+            }
+
+            self->totalRows = (slength)rowCount;
+            self->lazy_totalRows = (slength)rowCount;
         }
-
-		self->totalRows = (slength)rowCount;	
-
+        else
+        {
+            //推迟获取rowcount时，rowcount实时更新
+            self->totalRows = INT_MAX;
+            self->lazy_totalRows = 0;
+        }
         /** 置是否存在结果集标识 **/
         if (self->totalRows > 0)
         {
@@ -862,8 +874,10 @@ Cursor_SetRowCount(
 			}
 
 			self->totalRows = (slength)rowCount;
+            self->lazy_totalRows = (slength)rowCount;
 	} else {
 		self->totalRows     = -1;
+        self->lazy_totalRows = -1;
 	}
 
     /** 追加获取lastrowid **/
@@ -1878,7 +1892,11 @@ Cursor_setParamVariables(
         if (new_var != NULL)
             continue;
 
-        new_varType     = dmVar_TypeBySQLType(self->bindParamDesc[iparam].sql_type, 1);
+        if(self->bindParamDesc[iparam].param_type == DSQL_PARAM_OUTPUT && self->output_stream != 1)
+            new_varType = dmVar_TypeBySQLType(self->bindParamDesc[iparam].sql_type, 0);
+        else
+            new_varType = dmVar_TypeBySQLType(self->bindParamDesc[iparam].sql_type, 1);
+
         if (new_varType == NULL)
         {
             return -1;
@@ -1888,6 +1906,17 @@ Cursor_setParamVariables(
         if (new_var == NULL)
         {
             return -1;
+        }
+
+        /* 非输入参数类型，且为lob类型，则需先生成句柄对象 **/
+        if ((self->bindParamDesc[iparam].param_type == DSQL_PARAM_INPUT_OUTPUT ||
+            self->bindParamDesc[iparam].param_type == DSQL_PARAM_OUTPUT) &&
+            (new_var->type->pythonType == &g_CLobVarType || new_var->type->pythonType == &g_BLobVarType))
+        {
+            if ((*new_var->type->preDefineProc)(new_var, self->hdesc_param, iparam + 1) < 0)
+            {
+                return -1;
+            }
         }
         
         /* 非输入参数类型，且为复合类型，则需先生成句柄对象 **/
@@ -2727,7 +2756,10 @@ Cursor_CreateRow_AsTuple(
 
     // increment row counters
     self->rowCount++;
-    self->rowNum ++;	
+    self->rowNum ++;
+
+    if (self->lazy_rowcount)
+        self->lazy_totalRows = self->rowCount;
 
     return tuple;
 }
@@ -2780,7 +2812,10 @@ Cursor_CreateRow_AsDict(
 
     // increment row counters
     self->rowCount++;
-    self->rowNum ++;	
+    self->rowNum ++;
+
+    if (self->lazy_rowcount)
+        self->lazy_totalRows = self->rowCount;
 
     return dict;
 }
@@ -2797,7 +2832,7 @@ Cursor_One_Fetch(
 		return NULL;
 	else if (rt > 0)
     {
-        if (self->connection->cursor_class == DICT_CURSOR)
+        if (self->cursor_class == DICT_CURSOR)
         {
             return Cursor_CreateRow_AsDict(self);
         }
@@ -3161,13 +3196,12 @@ Cursor_MakeStmtSQL(
 	}
 	strcat(sql, "); end;");
 
-	sql_obj = dmString_FromAscii(sql);
+	sql_obj = dmString_FromEncodedString(sql, strlen(sql), self->environment->encoding);
 
     PyMem_Free(sql);
 
     return sql_obj;
 }
-
 
 PyObject*
 Cursor_MakeupProcParams(
@@ -3785,7 +3819,7 @@ static PyMethodDef g_CursorMethods[] = {
 static PyMemberDef g_CursorMembers[] = {
     { "arraysize",      T_INT,          offsetof(dm_Cursor, arraySize),        0 },
     { "bindarraysize",  T_INT,          offsetof(dm_Cursor, bindArraySize),    0 },
-    { "rowcount",       T_INT,          offsetof(dm_Cursor, totalRows),        READONLY },  /** 结果集总行数 **/
+    { "rowcount",       T_INT,          offsetof(dm_Cursor, lazy_totalRows),   READONLY },  /** 结果集总行数 **/
     { "rownumber",      T_INT,          offsetof(dm_Cursor, rowCount),         READONLY },   /** 游标所在当前位置0-based **/
     { "with_rows",      T_BOOL,         offsetof(dm_Cursor, with_rows),        READONLY },   /** 游标所在当前位置0-based **/
     { "statement",      T_OBJECT,       offsetof(dm_Cursor, statement),        READONLY },
@@ -3796,6 +3830,7 @@ static PyMemberDef g_CursorMembers[] = {
     { "_isClosed",      T_INT,          offsetof(dm_Cursor, isClosed),         READ_RESTRICTED },
     { "_statement",     T_OBJECT,       offsetof(dm_Cursor, statement),        READ_RESTRICTED },
     { "output_stream",  T_INT,          offsetof(dm_Cursor, output_stream),    0 },
+    { "lazy_rowcount",  T_BOOL,         offsetof(dm_Cursor, lazy_rowcount),    0 },
     { NULL }
 };
 

@@ -48,7 +48,7 @@ struct _dm_VariableType;
     slength 			*indicator; \
     slength 			*actualLength; \
     udint4 				size; \
-    udint4				bufferSize; \
+    ulength				bufferSize; \
     dm_Connection*      connection;\
     ulength	            output_stream;\
     struct _dm_VariableType*    type;

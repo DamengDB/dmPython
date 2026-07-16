@@ -25,7 +25,7 @@ extern "C" { 			/* Assume C declarations for C++   */
 
 /** 需同setup.py中保持一致 **/
 #ifndef BUILD_VERSION
-#define BUILD_VERSION                   2.5.32
+#define BUILD_VERSION                   2.5.38
 #endif
 
 #ifndef BUILD_VERSION_MAJOR
@@ -91,6 +91,14 @@ typedef int Py_ssize_t;
 #define PyInt_AsLong            PyLong_AsLong
 #define PyInt_Type              PyLong_Type
 #endif
+
+#ifdef WIN32
+#define DIR_CHAR            '\\'
+#else
+#define DIR_CHAR             '/'
+#endif
+
+#define FILE_PATH_LEN 513
 
 //-----------------------------------------------------------------------------
 // Globals

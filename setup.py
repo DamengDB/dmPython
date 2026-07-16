@@ -22,6 +22,7 @@ if sys.version_info[:2] < (3, 12):
 import os
 import re
 import struct
+import sysconfig
 
 if sys.version_info[:2] < (3, 12):
     from distutils.errors import DistutilsSetupError as SetupError
@@ -39,7 +40,7 @@ else:
     from setuptools import setup, Extension
 
 # define build constants
-BUILD_VERSION = "2.5.32"
+BUILD_VERSION = "2.5.38"
 dm_version = os.environ.get("DM_VER")
 
 if dm_version is not None:
@@ -54,8 +55,8 @@ def CheckDmHome(directoryToCheck):
         
     if sys.platform in ("win32", "cygwin"):
         if sys.version_info[:2] > (3, 7):
-            str_pthtemp=sys.executable[0:len(sys.executable)-len(sys.executable.split('\\')[-1])]+'Lib\\site-packages\\dmPython.pth'
-            file=open(str_pthtemp,'w')
+            str_pthtemp = str(sysconfig.get_paths()["purelib"]) + '\\dmPython.pth'
+            file = open(str_pthtemp, 'w')
             write_pthstr='import dpi'
             file.write(write_pthstr)
             file.close()
@@ -81,8 +82,8 @@ def CheckDmHome(directoryToCheck):
             dmLibDir = directoryToCheck   
             if sys.platform in ("win32", "cygwin"):
                 if sys.version_info[:2] > (3, 7):
-                    str_pytemp=sys.executable[0:len(sys.executable)-len(sys.executable.split('\\')[-1])]+'Lib\\site-packages\\dpi.py'
-                    file=open(str_pytemp,'w')
+                    str_pytemp = str(sysconfig.get_paths()["purelib"]) + '\\dpi.py'
+                    file = open(str_pytemp, 'w')
                     write_pystr='import os\nos.add_dll_directory(r\'' + dmLibDir + '\')'
                     file.write(write_pystr)
                     file.close()
@@ -95,8 +96,8 @@ def CheckDmHome(directoryToCheck):
                 dmLibDir = os.path.join(directoryToCheck, subDir)
                 if sys.platform in ("win32", "cygwin"):
                     if sys.version_info[:2] > (3, 7):
-                        str_pytemp=sys.executable[0:len(sys.executable)-len(sys.executable.split('\\')[-1])]+'Lib\\site-packages\\dpi.py'
-                        file=open(str_pytemp,'w')
+                        str_pytemp = str(sysconfig.get_paths()["purelib"]) + '\\dpi.py'
+                        file = open(str_pytemp, 'w')
                         write_pystr='import os\nos.add_dll_directory(r\'' + dmLibDir + '\')'
                         file.write(write_pystr)
                         file.close()
@@ -110,8 +111,8 @@ def CheckDmHome(directoryToCheck):
                 dmLibDir = os.path.join(dirName, subDir)
                 if sys.platform in ("win32", "cygwin"):
                     if sys.version_info[:2] > (3, 7):
-                        str_pytemp=sys.executable[0:len(sys.executable)-len(sys.executable.split('\\')[-1])]+'Lib\\site-packages\\dpi.py'
-                        file=open(str_pytemp,'w')
+                        str_pytemp = str(sysconfig.get_paths()["purelib"]) + '\\dpi.py'
+                        file = open(str_pytemp, 'w')
                         write_pystr='import os\nos.add_dll_directory(r\'' + dmLibDir + '\')'
                         file.write(write_pystr)
                         file.close()
@@ -317,7 +318,8 @@ if sys.version_info[:2] < (3, 12):
             ext_modules = [extension],
             keywords = "Dameng",
             license = "Python Software Foundation License",
-            classifiers = classifiers)
+            classifiers = classifiers,
+            data_files=[("", ["dmPython.pyi"])])
 else:
     setup(
             name = "dmPython",
@@ -330,6 +332,7 @@ else:
             ext_modules = [extension],
             keywords = "Dameng",
             license = "Python Software Foundation License",
-            classifiers = classifiers)
+            classifiers = classifiers,
+            data_files=[("Lib\\site-packages", ["dmPython.pyi"])])
         
         

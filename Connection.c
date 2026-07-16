@@ -7,6 +7,18 @@
 #include "Buffer.h"
 #include "trc.h"
 
+#ifdef _WIN32
+#include <direct.h>
+#define mkdir(path, mode) _mkdir(path)
+#define getcwd _getcwd
+#define rmdir _rmdir
+#define unlink _unlink
+#define strtok_r strtok_s
+#else
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 #define DMPY_ATTR_MAX_IDENTIFIER_LENGTH             11111
 #define DMPY_ATTR_STMT_CACHE_SIZE                   11112
 #define DMPY_ATTR_OUTPUT_TYPE_HANDLER               11113
@@ -155,7 +167,9 @@ Connection_SplitComponent(
     char*           source_str = NULL;
     char*           target_str = NULL;
     char*           pos = NULL;	
-    
+    char            password[DMPYTHON_STR_MAXLEN];
+    int             sp_flag = 0, i = 0;
+
     if (*sourceObj == Py_None || *targetObj != Py_None || splitString == NULL)
         return 0;
 
@@ -180,6 +194,42 @@ Connection_SplitComponent(
         else
             pos = strstr(pos, splitString);
     }
+    else if(strcmp(splitString, "@") == 0)
+    {
+        //处理密码中可能含有特殊字符的情况
+        if (*source_str == '"')
+        {
+            sp_flag = 1;
+            pos = source_str + 1;
+
+            while (1)
+            {
+                if (*pos == '\0')
+                    return -1;
+
+                if (*pos == '"')
+                {
+                    pos++;
+                    if (*pos != '"')
+                    {
+                        //双引号对后面不是分隔符报错
+                        if (*pos != '@' && *pos != '\0')
+                            return -1;
+                        password[i] = '\0';
+                        break;
+                    }
+                }
+                password[i++] = *pos;
+                if (i >= DMPYTHON_STR_MAXLEN)
+                    return -1;
+                pos++;
+            }
+        }
+        else
+        {
+            pos = strstr(source_str, splitString);
+        }
+    }
     else
         pos = strstr(source_str, splitString);
 
@@ -188,16 +238,24 @@ Connection_SplitComponent(
         return 0;
     }
 
-    *pos = 0;
+    if (sp_flag)
+    {
+        *sourceObj = Py_BuildValue("s", password);
+        if (*pos == 0)
+            return 1;
+    }
+    else
+    {
+        *pos = 0;
+        *sourceObj  = Py_BuildValue("s", source_str);
+        //还原pos处的内容
+        *pos = *splitString;
+    }
 
-    *sourceObj  = Py_BuildValue("s", source_str);
     if(strcmp(splitString,"?catalog=") == 0)
         *targetObj = Py_BuildValue("s", pos + 9);
     else
         *targetObj  = Py_BuildValue("s", pos + 1);
-
-    //还原pos处的内容
-    *pos = *splitString;
 
     return 1;
 }
@@ -870,6 +928,7 @@ Connection_New(
 
 	self->environment = NULL;
 	self->isConnected = 0;
+    self->cursor_class = 0;
 
 	return (PyObject*) self;
 }
@@ -1194,6 +1253,94 @@ Connection_makedsn(
     Py_XDECREF(formatArgs);
 }
 
+static int
+Connection_make_dmsvc(
+    dm_Connection*      self,               /*IN:连接对象*/
+    PyObject*           server,             /*IN:服务名参数*/
+    udbyte*             real_dmsvc_path     /*OUT:自己编写的dmsvc的目录*/
+)
+{
+    char*           server_str;
+    char*           server_str_cpy;
+    char*           pos;
+    udbyte          old_dmsvc_path[FILE_PATH_LEN] = { 0 };
+    FILE            *dst;
+    time_t          now = time(NULL);
+    struct tm*      local = localtime(&now);
+    char            folder_name[129];
+    char            current_dir[FILE_PATH_LEN];
+    char*           token;
+    int             flag = 1;
+
+    server_str = py_String_asString(server);
+    // 没有等号，尝试常规解析
+    pos = strstr(server_str, "=");
+    if (pos == NULL)
+        return 0;
+    // 服务名长度非法
+    if (pos - server_str > 128 || pos - server_str < 1)
+    {
+        PyErr_SetString(g_ErrorException, "invalid arguments");
+        return -1;
+    }
+
+    server_str_cpy = strdup(server_str);
+
+    // 构建文件夹名字
+    strftime(folder_name, sizeof(folder_name), "dmsvc_%Y%m%d_%H%M%S", local);
+
+    if (mkdir(folder_name, 0777) != 0)
+    {
+        PyErr_SetString(g_ErrorException, "make dir failed");
+        goto fun_end;
+    }
+
+    // 获取当前路径
+    if(getcwd(current_dir, sizeof(current_dir)) == NULL)
+    {
+        PyErr_SetString(g_ErrorException, "get current_dir failed");
+        goto fun_end;
+    }
+    // 拼接路径+文件
+    aq_sprintf(real_dmsvc_path, FILE_PATH_LEN, "%s%c%s%c%s", current_dir, DIR_CHAR, folder_name, DIR_CHAR, "dm_svc.conf");
+    dst = fopen(real_dmsvc_path, "w");
+    if(dst == NULL)
+    {
+        PyErr_SetString(g_ErrorException, "create new dm_svc.conf failed");
+        goto fun_end;
+    }
+
+    while((token = strtok_r(server_str, "&", &server_str)) != NULL)
+    {
+        char* key = token;
+        char* value = strchr(key, '=');
+        if (value)
+        {
+            *value = '\0';
+            value++;
+
+            if (flag == 1)
+            {
+                fprintf(dst, "\n%s=%s\n", key, value);
+                fprintf(dst, "[%s]\n", key);
+                flag = 0;
+                self->server = Py_BuildValue("s", key);
+            }
+            else
+            {
+                fprintf(dst, "%s=(%s)\n", key, value);
+            }
+        }
+    }
+    fclose(dst);
+    aq_sprintf(real_dmsvc_path, FILE_PATH_LEN, "%s%c%s", current_dir, DIR_CHAR, folder_name);
+    return 1;
+
+fun_end:
+    rmdir(folder_name);
+    return -1;
+}
+
 /************************************************************************
 purpose:
     初始化连接
@@ -1257,7 +1404,8 @@ Connection_Init(
     sdint4          local_code = -1;
     sdint4          cursor_class = -1;
     char*           end;
-    char*           str;    
+    char*           str;
+    udbyte          real_dmsvc_path[FILE_PATH_LEN] = {0};   // 文件目录
 
     // define keyword arguments
     static char *keywordList[] = { "user", "password", "dsn", "host", "server", "port",  
@@ -1330,28 +1478,28 @@ Connection_Init(
 
         /* username允许为"user/password@ip:port"形式，分别解析到对应字段上 */
         if (Connection_SplitComponent(&self->username, &self->password, "/") < 0)
-            return -1;
+            goto fun_end;
 
         if (Connection_SplitComponent(&self->password, &self->server, "@") < 0)
-            return -1;
+            goto fun_end;
 
         if (Connection_SplitComponent(&self->server, &tmp_port_obj, ":") < 0)
-            return -1;
+            goto fun_end;
 
         rt = Connection_SplitComponent(&tmp_port_obj, &self->schema, "/");
         if (rt < 0)
-            return -1;
+            goto fun_end;
         else if (rt == 0)
         {
             rt = Connection_SplitComponent(&tmp_port_obj, &self->catalog, "?catalog=");
             if (rt < 0)
-                return -1;
+                goto fun_end;
         }
         else
         {
             rt = Connection_SplitComponent(&self->schema, &self->catalog, "?catalog=");
             if (rt < 0)
-                return -1;
+                goto fun_end;
         }
 		
 		/* 转换字符串形式的port*/
@@ -1470,32 +1618,43 @@ Connection_Init(
     }
     else if (server_obj != NULL && self->server == Py_None)
     {
-        if (py_String_GetSize(server_obj) > DMPYTHON_STR_MAXLEN)
-            goto fun_end;
-
-        Py_XINCREF(server_obj);
-        self->server = server_obj;
-        /* server为ip:port形式，解析到对应字段去 */
-        if (Connection_SplitComponent(&self->server, &tmp_port_obj, ":") < 0)
-            return -1;
-
-        /* 转换字符串形式的port*/
-        if (tmp_port_obj != Py_None)
+        rt = 0;
+#ifdef DSQL_ATTR_DM_SVC_PATH
+        rt = Connection_make_dmsvc(self, server_obj, real_dmsvc_path);
+#endif
+        if (rt == -1)// 失败返回
         {
-            str = py_String_asString(tmp_port_obj);
-            if (PyErr_Occurred())
-            {
+           return -1;
+        }
+        else if (rt == 0)// 未匹配到自定义服务名
+        {
+            if (py_String_GetSize(server_obj) > DMPYTHON_STR_MAXLEN)
+                goto fun_end;
+
+            Py_XINCREF(server_obj);
+            self->server = server_obj;
+            /* server为ip:port形式，解析到对应字段去 */
+            if (Connection_SplitComponent(&self->server, &tmp_port_obj, ":") < 0)
                 return -1;
-            }
+
+            /* 转换字符串形式的port*/
+            if (tmp_port_obj != Py_None)
+            {
+                str = py_String_asString(tmp_port_obj);
+                if (PyErr_Occurred())
+                {
+                    return -1;
+                }
 
 #if PY_MAJOR_VERSION < 3
-            self->port = PyInt_FromString(str, &end, 10);
+                self->port = PyInt_FromString(str, &end, 10);
 #else
-            self->port = PyLong_FromString(str, &end, 10);
+                self->port = PyLong_FromString(str, &end, 10);
 #endif
-            if (PyErr_Occurred())
-            {
-                return -1;
+                if (PyErr_Occurred())
+                {
+                    return -1;
+                }
             }
         }
     }
@@ -1514,7 +1673,8 @@ Connection_Init(
             str = py_String_asString(port_obj);
             if (PyErr_Occurred())
             {
-                return -1;
+                rt = -1;
+                goto fun_end1;
             }
 
 #if PY_MAJOR_VERSION < 3
@@ -1524,7 +1684,8 @@ Connection_Init(
 #endif
             if (PyErr_Occurred())
             {
-                return -1;
+                rt = -1;
+                goto fun_end1;
             }
         }
         else if (PyLong_Check(port_obj))
@@ -1566,7 +1727,7 @@ Connection_Init(
             "Connection_connect():alloc connection handle") < 0)
         {
             self->hcon = NULL;
-            return -1;
+            goto fun_end1;
         }
 
         /** 优先判断本地语言和编码方式 **/
@@ -1574,7 +1735,10 @@ Connection_Init(
         {
             lang_id = DmIntNumber_AsInt(lang_id_obj, "lang_id");
             if (PyErr_Occurred())
-                return -1;            
+            {
+                rt = -1;
+                goto fun_end1;
+            }
 
             if (lang_id != -1 && lang_id != self->environment->local_langid)
             {
@@ -1584,7 +1748,7 @@ Connection_Init(
 
                     if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                         "Connection_connect():set connection attribute port") < 0)
-                        return -1;
+                        goto fun_end1;
 
                 /** 若设置成功，则更新环境变量上值 **/
                 Environment_refresh_local_langid(self->environment, NULL, lang_id);
@@ -1595,7 +1759,10 @@ Connection_Init(
         {
             local_code  = DmIntNumber_AsInt(local_code_obj, "local_code");
             if (PyErr_Occurred())
-                return -1;    
+            {
+                rt = -1;
+                goto fun_end1;
+            }
 
             if (local_code != -1 && local_code != self->environment->local_code)
             {       
@@ -1605,7 +1772,7 @@ Connection_Init(
 
                     if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                         "Connection_connect():set connection attribute port") < 0)
-                        return -1;	
+                        goto fun_end1;
 
                 /** 若设置成功，则更新环境变量上值 **/
                 Environment_refresh_local_code(self->environment, NULL, local_code);
@@ -1622,7 +1789,7 @@ Connection_Init(
 
                         if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                             "Connection_connect():set connection attribute port") < 0)
-                            return -1;
+                            goto fun_end1;
 
                     /** 若设置成功，则更新环境变量上值 **/
                     Environment_refresh_local_langid(self->environment, NULL, lang_id);
@@ -1634,7 +1801,10 @@ Connection_Init(
         {
             cursor_class  = DmIntNumber_AsInt(cursor_class_obj, "cursor_class");
             if (PyErr_Occurred())
-                return -1;    
+            {
+                rt = -1;
+                goto fun_end1;
+            }
 
             if (cursor_class != -1)
             {       
@@ -1652,7 +1822,8 @@ Connection_Init(
         if (local_code != PG_UTF8 && local_code != PG_BIG5 && local_code != PG_GB18030)
         {
             PyErr_SetString(PyExc_TypeError, "Invalid lang_id value to set, LANGUAGE_CNT_HK only can be used when local_code = PG_UTF8, PG_BIG5 or PG_GB18030");
-            return -1;
+            rt = -1;
+            goto fun_end1;
         }
     }
 #endif
@@ -1662,7 +1833,8 @@ Connection_Init(
         if (local_code != PG_UTF8 && local_code != PG_GBK && local_code != PG_BIG5 && local_code != PG_GB18030)
         {
             PyErr_SetString(PyExc_TypeError, "Invalid lang_id value to set, LANGUAGE_CN only can be used when local_code = PG_UTF8, PG_BIG5, PG_GBK or PG_GB18030");
-            return -1;
+            rt = -1;
+            goto fun_end1;
         }
     }
 
@@ -1670,7 +1842,10 @@ Connection_Init(
     /** 非默认端口号，需要设置端口属性 **/
     port    = DmIntNumber_AsInt(self->port, "port");
     if (PyErr_Occurred())
-        return -1;        
+    {
+        rt = -1;
+        goto fun_end1;
+    }
     if (port != DSQL_DEAFAULT_TCPIP_PORT)
     {
         Py_BEGIN_ALLOW_THREADS
@@ -1679,7 +1854,7 @@ Connection_Init(
 
         if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
             "Connection_connect():set connection attribute port") < 0)
-            return -1;	
+            goto fun_end1;
     }
 
     /** 拼出dsn串 ip:port **/
@@ -1690,7 +1865,10 @@ Connection_Init(
     {
         mode    = DmIntNumber_AsInt(accessmode_obj, "access_mode");
         if (PyErr_Occurred())
-            return -1;        
+        {
+            rt = -1;
+            goto fun_end1;
+        }
 
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_ACCESS_MODE, (dpointer)mode, 0);
@@ -1698,7 +1876,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute access_mode") < 0)
-                return -1;	
+                goto fun_end1;
     }
 
     //autoCommit
@@ -1706,7 +1884,10 @@ Connection_Init(
     {
         autocommit  = DmIntNumber_AsInt(autocommit_obj, "autoCommit");
         if (PyErr_Occurred())
-            return -1;        
+        {
+            rt = -1;
+            goto fun_end1;
+        }
 
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_AUTOCOMMIT, (dpointer)autocommit, 0);
@@ -1714,7 +1895,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute autoCommit") < 0)
-                return -1;	
+                goto fun_end1;
     }
 
     //connection_timeout
@@ -1722,7 +1903,10 @@ Connection_Init(
     {
         conn_timeout    = DmIntNumber_AsInt(conn_timeout_obj, "connection_timeout");
         if (PyErr_Occurred())
-            return -1;                
+        {
+            rt = -1;
+            goto fun_end1;
+        }
 
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_CONNECTION_TIMEOUT, (dpointer)conn_timeout, 0);
@@ -1730,7 +1914,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute connection_timeout") < 0)
-                return -1;	
+                goto fun_end1;
     }
 
     //login_timeout
@@ -1738,7 +1922,10 @@ Connection_Init(
     {
         login_timeout   = DmIntNumber_AsInt(login_timeout_obj, "login_timeout");
         if (PyErr_Occurred())
-            return -1;       
+        {
+            rt = -1;
+            goto fun_end1;
+        }
 
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_LOGIN_TIMEOUT, (dpointer)login_timeout, 0);
@@ -1746,7 +1933,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute login_timeout") < 0)
-                return -1;	
+                goto fun_end1;
     }
 
     //txn_isolation
@@ -1754,7 +1941,10 @@ Connection_Init(
     {
         txn_isolation   = DmIntNumber_AsInt(txn_isolation_obj, "txn_isolation");
         if (PyErr_Occurred())
-            return -1;              
+        {
+            rt = -1;
+            goto fun_end1;
+        }
 
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_TXN_ISOLATION, (dpointer)txn_isolation, 0);
@@ -1762,7 +1952,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute txn_isolation") < 0)
-                return -1;
+                goto fun_end1;
     }
 
     //compress_msg
@@ -1770,7 +1960,10 @@ Connection_Init(
     {        
         cmpress_msg = DmIntNumber_AsInt(cmpress_msg_obj, "compress_msg");
         if (PyErr_Occurred())
-            return -1;               
+        {
+            rt = -1;
+            goto fun_end1;
+        }
 
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_COMPRESS_MSG, (dpointer)cmpress_msg, 0);
@@ -1778,7 +1971,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute compress_msg") < 0)
-                return -1;
+                goto fun_end1;
     }
 
     //use_stmt_pool
@@ -1786,7 +1979,10 @@ Connection_Init(
     {        
         stmt_pool   = DmIntNumber_AsInt(stmt_pool_obj, "use_stmt_pool");
         if (PyErr_Occurred())
-            return -1;               
+        {
+            rt = -1;
+            goto fun_end1;
+        }
 
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_USE_STMT_POOL, (dpointer)stmt_pool, 0);
@@ -1794,7 +1990,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute use_stmt_pool") < 0)
-                return -1;
+                goto fun_end1;
     }
 
     //cursor_rollback_behavior
@@ -1802,7 +1998,10 @@ Connection_Init(
     {
         corsor_behavior = DmIntNumber_AsInt(cursor_rollback_obj, "cursor_rollback_behavior");
         if (PyErr_Occurred())
-            return -1;               
+        {
+            rt = -1;
+            goto fun_end1;
+        }
 
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_CURSOR_ROLLBACK_BEHAVIOR, (dpointer)corsor_behavior, 0);
@@ -1810,7 +2009,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute cursor_rollback_behavior") < 0)
-                return -1;
+                goto fun_end1;
     }    
 
     //mpp_login
@@ -1818,7 +2017,10 @@ Connection_Init(
     {
         mpp_login   = DmIntNumber_AsInt(mpp_login_obj, "mpp_login");
         if (PyErr_Occurred())
-            return -1;               
+        {
+            rt = -1;
+            goto fun_end1;
+        }
 
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_MPP_LOGIN, (dpointer)mpp_login, 0);
@@ -1826,7 +2028,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute mpp_login") < 0)
-                return -1;
+                goto fun_end1;
     }
 
     //rwseparate
@@ -1834,7 +2036,10 @@ Connection_Init(
     {   
         rwseparate  = DmIntNumber_AsInt(rwseparate_obj, "rwseparate");
         if (PyErr_Occurred())
-            return -1;               
+        {
+            rt = -1;
+            goto fun_end1;
+        }
 
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_RWSEPARATE, (dpointer)rwseparate, 0);
@@ -1842,7 +2047,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute rwseparate") < 0)
-                return -1;
+                goto fun_end1;
     }
 
     //rwseparate_percent
@@ -1850,7 +2055,10 @@ Connection_Init(
     {        
         rwseparate_percent  = DmIntNumber_AsInt(rwseparate_percent_obj, "rwseparate_percent");
         if (PyErr_Occurred())
-            return -1;               
+        {
+            rt = -1;
+            goto fun_end1;
+        }
 
         Py_BEGIN_ALLOW_THREADS
             rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_RWSEPARATE_PERCENT, (dpointer)rwseparate_percent, 0);
@@ -1858,7 +2066,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute rwseparate_percent") < 0)
-                return -1;
+                goto fun_end1;
     }
 
     //app_name
@@ -1873,7 +2081,7 @@ Connection_Init(
         
         if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute app_name") < 0)
-            return -1;
+            goto fun_end1;
     }
 
     //ssl_path
@@ -1888,7 +2096,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute ssl_path") < 0)
-                return -1;
+                goto fun_end1;
     }
 
     //ssl_pwd
@@ -1903,7 +2111,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute ssl_pwd") < 0)
-                return -1;
+                goto fun_end1;
     }
 
     //ukey_name
@@ -1918,7 +2126,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute ukey_name") < 0)
-                return -1;
+                goto fun_end1;
     }
 
     if (ukey_pin != NULL)
@@ -1932,7 +2140,7 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute ukey_pin") < 0)
-                return -1;
+                goto fun_end1;
     }
 #ifdef DSQL_ATTR_SHAKE_CRYPTO
     //shake_crypto
@@ -1947,23 +2155,34 @@ Connection_Init(
 
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute shake_crypto") < 0)
-                return -1;
+                goto fun_end1;
     }
 #endif
 
 #ifdef DSQL_ATTR_DM_SVC_PATH
-    if (dmsvc_path != NULL)
+    if (*real_dmsvc_path != 0)
     {
-        if (strlen(dmsvc_path) > DMPYTHON_STR_MAXLEN)
-            goto fun_end;
-        
         Py_BEGIN_ALLOW_THREADS
-            rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_DM_SVC_PATH, (dpointer)dmsvc_path, DSQL_NTS);
+            rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_DM_SVC_PATH, (dpointer)real_dmsvc_path, DSQL_NTS);
         Py_END_ALLOW_THREADS
-
             if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
                 "Connection_connect():set connection attribute dmsvc_path") < 0)
-                return -1;
+                goto fun_end1;
+    }
+    else
+    {
+        if (dmsvc_path != NULL)
+        {
+            if (strlen(dmsvc_path) > DMPYTHON_STR_MAXLEN)
+                goto fun_end;
+        
+            Py_BEGIN_ALLOW_THREADS
+                rt = dpi_set_con_attr(self->hcon, DSQL_ATTR_DM_SVC_PATH, (dpointer)dmsvc_path, DSQL_NTS);
+            Py_END_ALLOW_THREADS
+                if (Environment_CheckForError(self->environment, self->hcon, DSQL_HANDLE_DBC, rt,
+                    "Connection_connect():set connection attribute dmsvc_path") < 0)
+                    goto fun_end1;
+        }
     }
 #endif
 
@@ -1976,11 +2195,30 @@ Connection_Init(
         self->parse_type = parse_type_obj;
     }
 
-	return Connection_connect(self);
+    rt = Connection_connect(self);
+	goto fun_end1;
 
 fun_end:
+    rt = -1;
     PyErr_SetString(g_ErrorException, "invalid arguments");
-    return -1;
+
+fun_end1:
+    if (*real_dmsvc_path != 0)
+    {
+        udbyte      dmsvc_file[FILE_PATH_LEN];
+        aq_sprintf(dmsvc_file, FILE_PATH_LEN, "%s%c%s", real_dmsvc_path, DIR_CHAR, "dm_svc.conf");
+        unlink(dmsvc_file);
+        rmdir(real_dmsvc_path);
+    }
+//windows下返回rt，会使报错被包装为systemerror。而linux下相反，返回常量会使报错被包装为systemerror。
+#ifdef _WIN32
+    if (rt < 0)
+        return -1;
+    else
+        return 0;
+#else
+    return rt;
+#endif
 }
 
 static
@@ -2046,16 +2284,37 @@ static
 PyObject*
 Connection_NewCursor(
     dm_Connection*          self, 
-    PyObject*				args
+    PyObject*               args,
+    PyObject*               keywords
  )
 {
     PyObject*               rt_cursor;
+    dm_Cursor*              cursor;
+    int                     dictionary = self->cursor_class;
+
+    static char* keywordList[] = { "dictionary", NULL };
+
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|i", keywordList, &dictionary))
+        return NULL;
+
+    if (dictionary != 0 && dictionary != 1)
+    {
+        PyErr_SetString(PyExc_TypeError,
+            "dictionary : expecting a bool value.");
+        return NULL;
+    }
     
     DMPYTHON_TRACE_INFO(dpy_trace(NULL, args, "ENTER Connection_NewCursor\n"));
 
     rt_cursor   = Connection_NewCursor_Inner(self, args);
     
     DMPYTHON_TRACE_INFO(dpy_trace(NULL, args, "EXIT Connection_NewCursor, %s\n", rt_cursor == NULL ? "FAILED" : "SUCCESS"));
+
+    if (rt_cursor != NULL)
+    {
+        cursor = (dm_Cursor*)rt_cursor;
+        cursor->cursor_class = dictionary;
+    }
 
     return rt_cursor;
 }
@@ -2121,7 +2380,7 @@ Connection_GetExplainInfo_inner_ex(
     }
 
     aq_sprintf(sql_buf, size + 1, "EXPLAIN %s", (char*)stmt_Buffer.ptr);
-    statementObj    = dmString_FromAscii(sql_buf);
+    statementObj = dmString_FromEncodedString(sql_buf, strlen(sql_buf), self->environment->encoding);
     if (statementObj == NULL)
     {
         PyMem_Free(sql_buf);
@@ -2183,7 +2442,7 @@ Connection_GetExplainInfo(
 // declaration of methods for Python type "Connection"
 //-----------------------------------------------------------------------------
 static PyMethodDef g_ConnectionMethods[] = {
-	{ "cursor",     (PyCFunction) Connection_NewCursor,             METH_NOARGS,        "To create a new cursor"},
+	{ "cursor",     (PyCFunction) Connection_NewCursor,             METH_VARARGS | METH_KEYWORDS,    "To create a new cursor"},
 	{ "commit",     (PyCFunction) Connection_Commit,                METH_NOARGS,        "Commit"},
 	{ "rollback",   (PyCFunction) Connection_Rollback,              METH_NOARGS,        "Rollback" },
 	//{ "begin",    (PyCFunction) Connection_Begin, METH_VARARGS },

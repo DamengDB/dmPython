@@ -134,6 +134,7 @@ typedef struct {
 	ulength             actualRows;		// 一次fetch结果集中实际取得的行数
 	ulength	            rowNum;			// 一次fetch操作中所在行号	
 	sdint8	            totalRows;		// 结果集中总行数
+    sdint8              lazy_totalRows; // 结果集中总行数(开启lazy_rowcount参数后随fetch更新)
 	int                 statementType;
 	int                 isDML;
 	int                 isOpen;   
@@ -149,6 +150,8 @@ typedef struct {
     int                 is_iter;        /** 是否使用迭代器 **/
     int                 outparam_num;   //输出参数个数
     PyObject**          param_value;    //输出参数值
+    int                 lazy_rowcount;  // 是否推迟获取总行数
+    int                 cursor_class;   // 返回值类型
 } dm_Cursor;
 
 typedef struct
