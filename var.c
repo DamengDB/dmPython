@@ -325,7 +325,7 @@ dmVar_InternalBind(
         {
             rt = dpi_bind_param2(var->boundCursorHandle, var->boundPos, DSQL_PARAM_OUTPUT_STREAM, var->type->cType,
                 paramdesc->sql_type, paramdesc->prec, paramdesc->scale,
-                var->boundPos, var->bufferSize, var->indicator, var->actualLength);
+                (dpointer)var->boundPos, var->bufferSize, var->indicator, var->actualLength);
         }
         else
         {

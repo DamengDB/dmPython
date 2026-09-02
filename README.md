@@ -59,9 +59,9 @@ rpm -ivh dmPython-2.1-7.1-py33-1.x86_64.rpm --nodeps
 rpm -e dmPython-2.1-1.x86_64
 ```
 
-### 源码安装（Windows/Linux）
+### 源码安装（Windows/Linux/MacOS）
 
-Windows 和 Linux 也可以直接使用源码安装，操作如下：
+Windows , Linux和MacOS 也可以直接使用源码安装，操作如下：
 
 1. 进入到 dmPython 源码所在目录（`setup.py` 文件所在路径）。
 2. 执行命令：
@@ -154,7 +154,7 @@ vc_env = query_vcvarsall(VSERSION, plat_spec)
 vc_env = query_vcvarsall(10, plat_spec)
 ```
 
-### WIN 平台执行 `import dmPython` 时可能遇到 ImportError
+### 执行 `import dmPython` 时可能遇到 ImportError
 
 示例报错：
 
@@ -175,6 +175,14 @@ Linux 示例：
 export LD_LIBRARY_PATH=/opt/dmdbms/bin
 # 或
 export LD_LIBRARY_PATH=/drivers/dpi
+```
+
+MacOS 示例：
+
+```bash
+export DYLD_LIBRARY_PATH=/opt/dmdbms/bin
+# 或
+export DYLD_LIBRARY_PATH=/drivers/dpi
 ```
 
 ### Python 使用过程中遇到 `undefined symbol: PyUnicodeUCS2_Format`

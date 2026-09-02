@@ -163,6 +163,40 @@ Cursor_AllocHandle(
     return 0;
 }
 
+sdint4 Cursor_escape_quotes(char* dst, int dst_len, char* src, int src_len)
+{
+    char* to_start = dst;
+    char* end = NULL;
+    char* to_end = to_start + (dst_len ? dst_len - 1 : 2 * src_len);
+    int		overflow = 0;
+
+    for (end = src + src_len; src < end; src++)
+    {
+        if (*src == '\"')
+        {
+            if (dst + 2 > to_end)
+            {
+                overflow = 1;
+                break;
+            }
+            *dst++ = '\"';
+            *dst++ = '\"';
+        }
+        else
+        {
+            if (dst + 1 > to_end)
+            {
+                overflow = 1;
+                break;
+            }
+            *dst++ = *src;
+        }
+    }
+    *dst = 0;
+
+    return overflow ? -1 : (int)(dst - to_start);
+}
+
 /************************************************************************/
 /* purpose:
     set default schema
@@ -3104,40 +3138,6 @@ Cursor_CalcStmtSize(
     }
 
     return size;
-}
-
-sdint4 Cursor_escape_quotes(char* dst, int dst_len, char* src, int src_len)
-{
-    char* to_start = dst;
-    char* end = NULL;
-    char* to_end = to_start + (dst_len ? dst_len - 1 : 2 * src_len);
-    int		overflow = 0;
-
-    for (end = src + src_len; src < end; src++)
-    {
-        if (*src == '\"')
-        {
-            if (dst + 2 > to_end)
-            {
-                overflow = 1;
-                break;
-            }
-            *dst++ = '\"';
-            *dst++ = '\"';
-        }
-        else
-        {
-            if (dst + 1 > to_end)
-            {
-                overflow = 1;
-                break;
-            }
-            *dst++ = *src;
-        }
-    }
-    *dst = 0;
-
-    return overflow ? -1 : (int)(dst - to_start);
 }
 
 static

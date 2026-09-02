@@ -66,8 +66,8 @@ def CheckDmHome(directoryToCheck):
             subDirs = ["bin", "x64/debug", "x64/release", "dpi"]
         filesToCheck = ["dmdpi.dll"]
     elif sys.platform == "darwin":
-        subDirs = ["bin"]
-        filesToCheck = ["libdmdpi"]
+        subDirs = ["bin", "build/linux/linux_build/debug", "build/linux/linux_build/release", "dpi"]
+        filesToCheck = ["libdmdpi.dylib"]
     else:
         subDirs = ["bin", "build/linux/linux_build/debug", "build/linux/linux_build/release", "dpi"]
         filesToCheck = ["libdmdpi.so"]
@@ -303,6 +303,12 @@ extension = Extension(
         depends = [],
         define_macros = defineMacros
         )
+
+if sys.platform =="darwin":
+    target_dir = f"lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages"
+else:
+    target_dir = "Lib\\site-packages"
+
 if sys.version_info[:2] < (3, 12):
     # perform the setup
     setup(
@@ -333,6 +339,6 @@ else:
             keywords = "Dameng",
             license = "Python Software Foundation License",
             classifiers = classifiers,
-            data_files=[("Lib\\site-packages", ["dmPython.pyi"])])
+            data_files=[(target_dir, ["dmPython.pyi"])])
         
         
