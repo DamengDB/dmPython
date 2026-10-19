@@ -1310,7 +1310,7 @@ Connection_make_dmsvc(
         goto fun_end;
     }
 
-    while((token = strtok_r(server_str, "&", &server_str)) != NULL)
+    while((token = strtok_r(server_str_cpy, "&", &server_str_cpy)) != NULL)
     {
         char* key = token;
         char* value = strchr(key, '=');

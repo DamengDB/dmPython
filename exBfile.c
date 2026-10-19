@@ -157,13 +157,8 @@ exBFileVar_Free(
             goto fun_end;
         }
 
-        //dpi execute
+        // bug710530, 可能存在没有获取bfile实际数据的情况,文件句柄没有打开,所以这里不关注执行结果.
         rt = dpi_exec(stmt);
-        if (Environment_CheckForError(var->environment, stmt, DSQL_HANDLE_STMT, rt,
-            "exBFileVar_Free():dpi_bfile_construct") < 0)
-        {
-            goto fun_end;
-        }
 
         //free statement handle
         rt = dpi_free_stmt(stmt);

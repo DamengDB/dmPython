@@ -40,7 +40,7 @@ else:
     from setuptools import setup, Extension
 
 # define build constants
-BUILD_VERSION = "2.5.38"
+BUILD_VERSION = "2.6.1"
 dm_version = os.environ.get("DM_VER")
 
 if dm_version is not None:
@@ -278,7 +278,7 @@ if sys.version_info[:2] < (3, 12):
 
 # define classifiers for the package index
 classifiers = [
-        "Development Status :: 6 - Mature",
+        "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
         "Natural Language :: English",
         "Operating System :: OS Independent",

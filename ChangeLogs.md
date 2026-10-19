@@ -8,6 +8,20 @@
 
 ## Change Logs
 
+**dmPython v2.6.1(2026-8-4)**
+
+- 修复了绑定错误类型执行语句失败后，导致后续正常数据不能正常绑定的问题
+- 修复了释放bfile类型数据的问题
+- 修复了cursor.fetchall()的内存泄露问题
+
+**dmPython v2.5.40(2026-7-29)**
+
+- 修复了输出CHAR以及BINARY类型数据长度受限的问题
+
+**dmPython v2.5.39(2026-7-8)**
+
+- 修复了使用server=GroupName?GroupName=(host1:port1)格式连接数据库时，多次创建连接，GroupName后面的host,port信息丢失，导致连接不上的问题
+
 **dmPython v2.5.38(2026-3-30)**
 
 - 增加了连接时自定义服务名的连接方式

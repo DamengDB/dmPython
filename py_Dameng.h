@@ -17,6 +17,7 @@ extern "C" { 			/* Assume C declarations for C++   */
 //-----------------------------------------------------------------------------
 #define MAX_STRING_CHARS                4094
 #define MAX_BINARY_BYTES                8188
+#define MAX_FIX_STR_BYTES               65536
 
 #define NAMELEN                         128
 
@@ -25,7 +26,7 @@ extern "C" { 			/* Assume C declarations for C++   */
 
 /** 需同setup.py中保持一致 **/
 #ifndef BUILD_VERSION
-#define BUILD_VERSION                   2.5.38
+#define BUILD_VERSION                   2.6.1
 #endif
 
 #ifndef BUILD_VERSION_MAJOR

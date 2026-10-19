@@ -235,7 +235,7 @@ dm_VarType vt_FixedChar = {
     (BindObjectValueProc)StringVar_BindObjectValue,
     &g_FixedCharType,                   // Python type
     DSQL_C_NCHAR,                       // c type
-    2000,                               // element length (default)
+    MAX_FIX_STR_BYTES,                  // element length (default)
     1,                                  // is character data
     0,                                  // is variable length
     1,                                  // can be copied
@@ -315,7 +315,7 @@ dm_VarType vt_FixedBinary = {
     (BindObjectValueProc)StringVar_BindObjectValue,
     &g_FixedBinaryType,                 // Python type
     DSQL_C_BINARY,                      // c type
-    2000,                               // element length (default)
+    MAX_FIX_STR_BYTES,                  // element length (default)
     0,                                  // is character data
     0,                                  // is variable length
     1,                                  // can be copied

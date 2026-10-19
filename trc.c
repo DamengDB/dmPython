@@ -88,7 +88,7 @@ dpy_trace(
             fwrite(statementStr, 1, strlen(statementStr), fp);
             fwrite("\n", 1, 1, fp);
         }
-}
+    }
     // дargs
     if (args != NULL && args != Py_None)
     {
@@ -96,9 +96,9 @@ dpy_trace(
         if (tempObj != NULL)
         {
             argsStr = py_String_asString(tempObj);
-            Py_DECREF(tempObj);
             fwrite(argsStr, 1, strlen(argsStr), fp);
             fwrite("\n", 1, 1, fp);
+            Py_DECREF(tempObj);
         }
     }
     fwrite("\n", 1, 1, fp);

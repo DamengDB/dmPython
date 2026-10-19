@@ -1105,6 +1105,8 @@ Cursor_InternalExecute(
                     dm_var->actualLength[0] = *length;
                     newParamVal = dmVar_GetValue((dm_Var*)dm_var, 0);
                     PyList_Append(self->param_value[cols++], newParamVal);
+                    //PyList_Append会将newParamVal引用计数加1
+                    Py_DECREF(newParamVal);
                 }
                 else if (rt == DSQL_NO_DATA)
                 {
@@ -1721,6 +1723,12 @@ Cursor_setParamVariables_oneRow(
                     }
                 }
 
+                //sql_type是服务器推荐类型，如果是binary，而绑定数据是varchar，则绑定类型用varchar
+                if (bindParamDesc->sql_type == DSQL_BINARY && new_varType == &vt_String)
+                {
+                    bindParamDesc->sql_type = DSQL_VARCHAR;
+                }
+
                 // bug631212 如果数据库内部使用numeric，而使用dmPython传入int类型数据时绑定类型仍然使用float类型否则第一个使用int后之后绑定参数将会丢失小数部分
                 if (bindParamDesc->sql_type == DSQL_DEC && new_varType != &vt_Boolean && param_type == DSQL_PARAM_INPUT && (n_row > 1))
                 {
@@ -1732,8 +1740,8 @@ Cursor_setParamVariables_oneRow(
                 {
                     bindParamDesc->sql_type = DSQL_TIMESTAMP;
 
-                    bindParamDesc->prec     = 26;
-                    bindParamDesc->scale    = 6;
+                    bindParamDesc->prec = 26;
+                    bindParamDesc->scale = 6;
                 }
 
                 // bug627535 当输出参数为CLOB类型时进行转换会导致输出错误，例如作为returnging输出参数时存在text类型参数，因此在此处对于输出参数且SQL类型为CLOB类型时不再进行转换
@@ -2870,6 +2878,8 @@ Cursor_Many_Fetch(
         }
 
         PyList_Append(list, tuple);
+        //PyList_Append会将tuple引用计数加1
+        Py_DECREF(tuple);
 	}
 
 	//Py_INCREF(list);
@@ -2898,6 +2908,8 @@ Cursor_All_Fetch(
         }
         row_count++;
         PyList_Append(list, tuple);
+        //PyList_Append会将tuple引用计数加1
+        Py_DECREF(tuple);
     }
     self->totalRows = row_count;
     //Py_INCREF(list);
