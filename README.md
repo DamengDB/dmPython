@@ -70,6 +70,30 @@ Windows , Linux和MacOS 也可以直接使用源码安装，操作如下：
 python setup.py install
 ```
 
+#### macOS DPI 运行库
+
+源码构建仍需准备与 Python 架构匹配的 macOS DPI 动态库及配套头文件。例如，将
+`libdmdpi.dylib` 放在 `$DM_HOME/bin`，将 `DPI.h` 等头文件放在 `$DM_HOME/include`。
+设置 `DM_HOME` 后再构建：
+
+```bash
+export DM_HOME=/path/to/macos-dpi-sdk
+python -m pip install .
+python -c "import dmPython; print(dmPython.version)"
+```
+
+macOS 构建会将所选 DPI 库目录写入扩展的运行库搜索路径，使 install name 为
+`@rpath/libdmdpi.dylib` 的库在没有 `DYLD_LIBRARY_PATH` 时也能加载。SDK 目录需要在
+运行时保留；移动 SDK 后需要重新构建。此设置不会将 DPI 库打包到 wheel，也不提供
+缺失的 macOS SDK。Linux／Windows 的构建与库搜索方式保持原样。
+
+有可用的 macOS DPI SDK 时，可运行真实构建／加载回归；测试会复制 SDK 库和头文件
+到临时目录，不需要数据库凭据或连接数据库：
+
+```bash
+DMPYTHON_TEST_SDK="$DM_HOME" python -m unittest discover -s tests -v
+```
+
 ## 其他可能有帮助的信息
 
 ### 生成安装包

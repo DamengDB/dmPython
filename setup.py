@@ -166,6 +166,10 @@ else:
 # setup extra link and compile args
 extraCompileArgs = ["-DBUILD_VERSION=%s" % BUILD_VERSION]
 extraLinkArgs = []
+if sys.platform == "darwin":
+    # -L only finds DPI at link time. Record the configured SDK directory so
+    # dylibs with an @rpath install name also load without DYLD_LIBRARY_PATH.
+    extraLinkArgs.extend(["-Xlinker", "-rpath", "-Xlinker", os.path.abspath(dmLibDir)])
 
 # extension Macros definition if on 64bit platform,add DM64,othersise use default [defineMacros].
 defineMacros = []
